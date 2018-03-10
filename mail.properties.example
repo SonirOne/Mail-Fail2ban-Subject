@@ -1,0 +1,6 @@
+mail.imap.starttls.enable=true
+mail.store.protocol=imap
+mail.imap.auth=true
+mail.imap.host=mailserverhostname.com
+username=username@mail.example
+password=mailpassword
