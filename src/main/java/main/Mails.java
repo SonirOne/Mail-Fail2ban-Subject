@@ -14,88 +14,24 @@ public class Mails {
 
     private static final Logger logger = LogManager.getLogger(Mails.class.getName());
 
+    private HashMap<String, IPInfo> sshdIPs;
+    private Properties props;
+
+    private Folder inbox;
+
+    public Mails(){
+        sshdIPs = new HashMap<>();
+        props = getProperties();
+    }
+
     public void readMails() {
-
-        Properties props = getProperties();
-        String username = props.getProperty("username");
-        String password = props.getProperty("password");
-
         logger.info("Start app...");
         try {
-            //Connect to the server
-            Session session = Session.getDefaultInstance(props, new Authenticator() {
-                @Override
-                protected PasswordAuthentication getPasswordAuthentication() {
-                    return new PasswordAuthentication(username, password);
-                }
-            });
-            //session.setDebug( true);
-            Store store = session.getStore();
-            store.connect();
-
-            //open the inbox folder
-            Folder inbox = store.getFolder("INBOX");
-            inbox.open(Folder.READ_ONLY);
-
-            int msgCount = inbox.getMessageCount();
-
-            int msgStart = 1;
-            int msgEnd = msgCount;
-
-            int numMessages = 250;
-            if (msgCount > numMessages) {
-                msgStart = msgCount - numMessages;
-                msgEnd = msgCount;
-            }
-
-            Message[] messages = inbox.getMessages(msgStart, msgEnd);
-
-            Message msg;
-            String subject;
-            String ip;
-            HashMap<String, IPInfo> sshdIPs = new HashMap<>();
-            for (int i = messages.length - 1; i >= 0; i--) {
-
-                if (i % 50 == 0) {
-                    logger.info("Processing...");
-                }
-
-                msg = messages[i];
-                subject = msg.getSubject();
-                ip = getIP(subject);
-                if (ip != null) {
-                    if (!sshdIPs.containsKey(ip)) {
-                        sshdIPs.put(ip, new IPInfo(ip));
-                    }
-
-                    sshdIPs.get(ip).increment();
-                }
-            }
-
-            Collection<IPInfo> hashMapValues = sshdIPs.values();
-
-            ArrayList<IPInfo> listIPInfo = new ArrayList<IPInfo>();
-            listIPInfo.addAll(hashMapValues);
-            listIPInfo.sort(new Comparator<IPInfo>() {
-                @Override
-                public int compare(IPInfo first, IPInfo second) {
-                    if (first.getCount() > second.getCount()) {
-                        return -1;
-                    }
-
-                    if (first.getCount() < second.getCount()) {
-                        return 1;
-                    }
-
-                    return 0;
-                }
-            });
-
-            for (IPInfo info : listIPInfo) {
-                System.out.println(info);
-            }
-
-            inbox.close(false);
+            Store store=openStore();
+            Message[] messages = getMessages(store);
+            processMessages(messages);
+            processSSHDIPs();
+            inbox.close(true);
             store.close();
         } catch (NoSuchProviderException nspe) {
             System.err.println("invalid provider name");
@@ -105,6 +41,93 @@ public class Mails {
         }
 
         logger.info("Finished.");
+    }
+
+    private Store openStore() throws MessagingException {
+        String username = props.getProperty("username");
+        String password = props.getProperty("password");
+
+        //Connect to the server
+        Session session = Session.getDefaultInstance(props, new Authenticator() {
+            @Override
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(username, password);
+            }
+        });
+        //session.setDebug( true);
+        Store store = session.getStore();
+        store.connect();
+        return store;
+    }
+
+    private Message[] getMessages(Store store) throws MessagingException {
+        //open the inbox folder
+        inbox = store.getFolder("INBOX");
+        inbox.open(Folder.READ_ONLY);
+
+        int msgCount = inbox.getMessageCount();
+
+        int msgStart = 1;
+        int msgEnd = msgCount;
+
+        int numMessages = 250;
+        if (msgCount > numMessages) {
+            msgStart = msgCount - numMessages;
+            msgEnd = msgCount;
+        }
+
+        return inbox.getMessages(msgStart, msgEnd);
+    }
+
+    private void processMessages(Message[] messages) throws MessagingException {
+        Message msg;
+        String subject;
+        String ip;
+
+        for (int i = 0; i < messages.length; i++) {
+
+            if (i % 50 == 0) {
+                logger.info("Processed "+i+"...");
+            }
+
+            msg = messages[i];
+            subject = msg.getSubject();
+            ip = getIP(subject);
+            if (ip != null) {
+                if (!sshdIPs.containsKey(ip)) {
+                    sshdIPs.put(ip, new IPInfo(ip));
+                }
+
+                sshdIPs.get(ip).increment();
+            }
+        }
+    }
+
+    private void processSSHDIPs(){
+
+
+        Collection<IPInfo> hashMapValues = sshdIPs.values();
+
+        ArrayList<IPInfo> listIPInfo = new ArrayList<IPInfo>();
+        listIPInfo.addAll(hashMapValues);
+        listIPInfo.sort(new Comparator<IPInfo>() {
+            @Override
+            public int compare(IPInfo first, IPInfo second) {
+                if (first.getCount() > second.getCount()) {
+                    return -1;
+                }
+
+                if (first.getCount() < second.getCount()) {
+                    return 1;
+                }
+
+                return 0;
+            }
+        });
+
+        for (IPInfo info : listIPInfo) {
+            System.out.println(info);
+        }
     }
 
     private Properties getProperties() {
